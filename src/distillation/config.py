@@ -21,7 +21,9 @@ class Config(BaseSettings):
     )
 
     # ── API credentials ────────────────────────────────────────────────────────
-    anthropic_api_key: str = Field(..., description="Anthropic API key")
+    anthropic_api_key: str = Field("", description="Anthropic API key")
+    gemini_api_key: str = Field("", description="Google Gemini API key")
+    openai_api_key: str = Field("", description="OpenAI API key")
 
     # ── Model selection ────────────────────────────────────────────────────────
     whisper_model: str = Field("large-v3", description="faster-whisper model name")
@@ -30,6 +32,8 @@ class Config(BaseSettings):
         "int8", description="Quantisation: float16 (GPU) or int8 (CPU)"
     )
     claude_model: str = Field("claude-sonnet-4-6")
+    gemini_model: str = Field("gemini-2.0-flash")
+    openai_model: str = Field("gpt-4o-mini")
 
     # ── Clip constraints ───────────────────────────────────────────────────────
     min_clip_duration: float = Field(30.0, description="Minimum clip length in seconds")

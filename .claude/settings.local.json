@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd*)",
+      "Bash(py*)",
+      "Bash(python*)",
+      "Bash(ffmpeg*)",
+      "Bash(pip*)",
+      "Bash(which*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(sed*)",
+      "Bash(cd:*)",
+      "Bash(py:*)",
+      "Bash(python:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(pip:*)",
+      "Bash(which:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(cd \"C:/Users/ehsan/Documents/practicingAI/lectureSummarizer/lecture-distillation-engine\" && /c/Users/ehsan/AppData/Local/Python/pythoncore-3.14-64/Scripts/distill run --help 2>&1)",
+      "Bash(cd \"C:/Users/ehsan/Documents/practicingAI/lectureSummarizer/lecture-distillation-engine\" && /c/Users/ehsan/AppData/Local/Python/pythoncore-3.14-64/Scripts/distill run --input cache/downloads/877200ae168b7fa9.mp4 --domain khutba --clips 5 2>&1)",
+      "Bash(cd \"C:/Users/ehsan/Documents/practicingAI/lectureSummarizer/lecture-distillation-engine\" && /c/Users/ehsan/AppData/Local/Python/pythoncore-3.14-64/Scripts/distill --input cache/downloads/877200ae168b7fa9.mp4 --domain khutba --clips 5 2>&1)",
+      "Bash(tail:*)",
+      "WebSearch"
+    ]
+  }
+}

@@ -1,20 +1,12 @@
 """
-LLM-based metadata generator.
+LLM-based metadata generator using OpenAI.
 
 Produces per-clip:
-  - Hook caption (≤150 chars, designed to stop a scroll)
+  - Hook caption (<=150 chars, designed to stop a scroll)
   - Description (YouTube Shorts / IG Reels description)
   - Hashtags (platform-optimised, domain-aware)
   - Thumbnail concept (text description)
   - B-roll suggestions (timestamped visual concept per major point)
-
-Why Claude for this and not template-based generation?
-  - Hook captions require understanding the specific emotional payoff of the clip.
-  - Hashtag sets need to be contextually relevant, not just generic.
-  - B-roll ideas require understanding what the speaker is describing
-    (e.g., "he's describing the Day of Judgement" → suggest epic celestial imagery).
-  - Templates produce identical-sounding captions; LLMs produce variety that
-    avoids platform shadow-banning from repetition signals.
 """
 
 from __future__ import annotations
@@ -22,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 
-from anthropic import Anthropic
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from distillation.config import Config
@@ -43,11 +35,11 @@ DOMAIN_HASHTAG_SEEDS: dict[Domain, list[str]] = {
 
 
 class MetadataGenerator:
-    """Generates platform-ready metadata for each clip using Claude."""
+    """Generates platform-ready metadata for each clip using OpenAI."""
 
     def __init__(self, config: Config) -> None:
         self.cfg = config
-        self.client = Anthropic(api_key=config.anthropic_api_key)
+        self.client = OpenAI(api_key=config.openai_api_key)
 
     def generate(self, clip: Clip, domain: Domain = Domain.GENERIC) -> ClipMetadata:
         """Generate full metadata for a single clip."""
@@ -92,12 +84,14 @@ Rules:
 - Provide 2-4 b_roll_suggestions tied to specific moments in the transcript.
 - hashtags: mix popular + niche, no spaces in tags."""
 
-        response = self.client.messages.create(
-            model=self.cfg.claude_model,
+        response = self.client.chat.completions.create(
+            model=self.cfg.openai_model,
             max_tokens=1024,
+            temperature=0.4,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text
+
+        return response.choices[0].message.content
 
     @staticmethod
     def _parse(raw: str, domain: Domain) -> ClipMetadata:

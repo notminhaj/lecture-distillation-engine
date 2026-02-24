@@ -1,12 +1,12 @@
 """
-LLM-based multi-axis engagement scorer using Claude.
+LLM-based multi-axis engagement scorer using OpenAI.
 
 Architecture decisions:
   1. Batch scoring: we send multiple segments in a single API call using a
-     structured JSON schema.  This is ~5× cheaper than per-segment calls and
+     structured JSON schema.  This is ~5x cheaper than per-segment calls and
      avoids rate limit issues on long lectures.
 
-  2. Structured output: we ask Claude to return a JSON array matching our
+  2. Structured output: we ask the model to return a JSON array matching our
      EngagementAxes schema exactly.  We validate with Pydantic; if validation
      fails we retry with a stricter prompt.
 
@@ -15,18 +15,11 @@ Architecture decisions:
      terms, etc.) is injected — without it bleeding into other modules.
 
   4. Context window: we provide the full transcript as background context so
-     Claude can evaluate standalone_coherence correctly (does this clip make
+     the model can evaluate standalone_coherence correctly (does this clip make
      sense to someone who hasn't heard the rest?).
 
-  5. Acoustic features are *not* Claude's job.  We compute energy, pace, and
+  5. Acoustic features are *not* the LLM's job.  We compute energy, pace, and
      speech-rate in AcousticScorer and merge the results here.
-
-  LLM vs Traditional split (why Claude for scoring):
-    - "Does this open and close a complete thought?" → needs language understanding
-    - "Is this a self-contained ruling or incomplete?" → domain knowledge
-    - "Would this first sentence stop a scroll?" → cultural + rhetorical judgment
-    - Sentiment / energy → librosa (cheaper, faster, equally good)
-    - Topic coherence → embeddings (already done in segmentation)
 """
 
 from __future__ import annotations
@@ -35,7 +28,7 @@ import json
 import logging
 from pathlib import Path
 
-from anthropic import Anthropic
+from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from distillation.config import Config
@@ -89,13 +82,13 @@ Domain integrity rules:
 
 class LLMScorer(BaseScorer):
     """
-    Scores segments on six engagement axes using Claude, then merges
+    Scores segments on six engagement axes using OpenAI, then merges
     acoustic features from AcousticScorer.
     """
 
     def __init__(self, config: Config) -> None:
         self.cfg = config
-        self.client = Anthropic(api_key=config.anthropic_api_key)
+        self.client = OpenAI(api_key=config.openai_api_key)
         self.acoustic = AcousticScorer()
 
     def score(
@@ -156,16 +149,19 @@ class LLMScorer(BaseScorer):
         system_prompt = self._build_system_prompt(domain)
         user_prompt = self._build_user_prompt(batch, transcript)
 
-        logger.debug("Scoring batch of %d segments via Claude", len(batch))
+        logger.debug("Scoring batch of %d segments via OpenAI", len(batch))
 
-        response = self.client.messages.create(
-            model=self.cfg.claude_model,
+        response = self.client.chat.completions.create(
+            model=self.cfg.openai_model,
             max_tokens=2048,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
         )
 
-        raw_text = response.content[0].text
+        raw_text = response.choices[0].message.content
         return self._parse_response(raw_text, expected_count=len(batch))
 
     def _build_system_prompt(self, domain: Domain) -> str:
@@ -193,7 +189,7 @@ RULES:
 """
 
     def _build_user_prompt(self, batch: list[Segment], transcript: Transcript) -> str:
-        # Provide condensed context so Claude can evaluate standalone_coherence
+        # Provide condensed context so model can evaluate standalone_coherence
         # We use the first 500 words of the full transcript as background
         context_words = transcript.full_text.split()[:500]
         context_snippet = " ".join(context_words)
@@ -221,7 +217,7 @@ Return a JSON array with one scoring object per segment."""
     @staticmethod
     def _parse_response(raw: str, expected_count: int) -> list[EngagementAxes]:
         """
-        Parse Claude's JSON response into EngagementAxes objects.
+        Parse the model's JSON response into EngagementAxes objects.
 
         Robust to:
           - Markdown code fences (```json ... ```)
@@ -277,7 +273,7 @@ Return a JSON array with one scoring object per segment."""
                     llm_rationale="Parse error; using neutral defaults.",
                 ))
 
-        # Pad if Claude returned fewer items than expected (shouldn't happen)
+        # Pad if model returned fewer items than expected
         while len(axes_list) < expected_count:
             axes_list.append(axes_list[-1] if axes_list else EngagementAxes(
                 semantic_density=0.5, emotional_resonance=0.5, standalone_coherence=0.5,
