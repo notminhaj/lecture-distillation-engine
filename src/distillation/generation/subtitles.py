@@ -27,9 +27,9 @@ from distillation.models import Clip, SubtitleLine, Transcript, Word
 
 logger = logging.getLogger(__name__)
 
-# Tune these to match platform conventions
-WORDS_PER_LINE = 4      # words before forcing a line break
-MAX_LINE_DURATION = 2.5  # seconds; force a new line even if word count not hit
+# Tune these to match platform conventions (shorts = frequent, short phrases)
+WORDS_PER_LINE = 4      # words before forcing a line break (shorts convention)
+MAX_LINE_DURATION = 2.0  # seconds; force a new line even if word count not hit
 
 
 class SubtitleGenerator:

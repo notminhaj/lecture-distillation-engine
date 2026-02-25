@@ -127,6 +127,36 @@ class TestVideoExporter:
         assert "Test subtitle" in srt_path.read_text(encoding="utf-8")
 
     @patch("distillation.export.video.subprocess.run")
+    def test_ass_written_when_subtitles_present(self, mock_run, exporter, tmp_path):
+        mock_run.return_value = MagicMock(returncode=0)
+        clip = make_clip(with_subs=True)
+        exporter.export(clip, source_video="/tmp/source.mp4")
+
+        ass_path = tmp_path / "outputs" / "clip_000" / "clip_000.ass"
+        assert ass_path.exists()
+        content = ass_path.read_text(encoding="utf-8")
+        assert "Komika Axis" in content
+        assert "Test subtitle" in content
+
+    @patch("distillation.export.video.subprocess.run")
+    def test_reencode_burns_in_subtitles_two_pass(self, mock_run, exporter, tmp_path):
+        mock_run.return_value = MagicMock(returncode=0)
+        clip = make_clip(with_subs=True)
+        exporter.export(clip, source_video="/tmp/source.mp4")
+
+        # Two-pass: first cut, then burn subtitles
+        assert mock_run.call_count == 2
+        # Pass 1: cut (no -vf)
+        cut_cmd = mock_run.call_args_list[0][0][0]
+        assert "libx264" in cut_cmd
+        assert "-vf" not in cut_cmd
+        # Pass 2: burn subtitles
+        burn_cmd = mock_run.call_args_list[1][0][0]
+        assert "-vf" in burn_cmd
+        vf_idx = burn_cmd.index("-vf")
+        assert "ass=" in burn_cmd[vf_idx + 1]
+
+    @patch("distillation.export.video.subprocess.run")
     def test_srt_not_written_when_no_subtitles(self, mock_run, exporter, tmp_path):
         mock_run.return_value = MagicMock(returncode=0)
         clip = make_clip(with_subs=False)

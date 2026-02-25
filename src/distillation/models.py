@@ -204,11 +204,25 @@ class SubtitleLine(BaseModel):
         ms = int((seconds % 1) * 1000)
         return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
+    def to_ass_timestamp(self, seconds: float) -> str:
+        h = int(seconds // 3600)
+        m = int((seconds % 3600) // 60)
+        s = int(seconds % 60)
+        cs = int((seconds % 1) * 100)
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
     def to_srt_block(self) -> str:
         return (
             f"{self.index}\n"
             f"{self.to_srt_timestamp(self.start)} --> {self.to_srt_timestamp(self.end)}\n"
             f"{self.text}\n"
+        )
+
+    def to_ass_dialogue(self) -> str:
+        return (
+            f"Dialogue: 0,{self.to_ass_timestamp(self.start)},"
+            f"{self.to_ass_timestamp(self.end)},Default,,0,0,0,,"
+            f"{self.text}"
         )
 
 
@@ -250,6 +264,31 @@ class Clip(BaseModel):
     def export_srt(self) -> str:
         """Render all subtitle lines as an SRT string."""
         return "\n".join(line.to_srt_block() for line in self.subtitles)
+
+    def export_ass(self) -> str:
+        """Render all subtitle lines as an ASS string with shorts-optimised styling."""
+        header = (
+            "[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            "PlayResX: 1080\n"
+            "PlayResY: 1920\n"
+            "WrapStyle: 0\n"
+            "\n"
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+            "Alignment, MarginL, MarginR, MarginV, Encoding\n"
+            "Style: Default,Komika Axis,324,&H00FFFFFF,&H000000FF,"
+            "&H00000000,&H80000000,-1,0,0,0,"
+            "100,100,0,0,1,8,3,"
+            "2,40,40,200,1\n"
+            "\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+        dialogues = "\n".join(line.to_ass_dialogue() for line in self.subtitles)
+        return header + dialogues + "\n"
 
 
 # ── Pipeline result ────────────────────────────────────────────────────────────
