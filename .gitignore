@@ -37,3 +37,7 @@ Thumbs.db
 *.pt
 *.bin
 *.safetensors
+
+# Local AI assistant config
+.claude/
+CLAUDE.md
