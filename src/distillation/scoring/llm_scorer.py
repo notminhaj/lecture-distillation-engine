@@ -178,6 +178,11 @@ SCORING AXES (all 0.0–1.0, two decimal places):
 - narrative_completeness: Does it open AND close a thought (or close with deliberate tension)?
 - domain_integrity: Is domain-specific content presented correctly and completely?
 - hook_strength: Would the FIRST 3 seconds stop a scroll on TikTok?
+  Quote the exact opening words of the segment in your rationale and explain WHY they would or wouldn't hook.
+  Rubric:
+    0.8+: Opens with a direct question, surprising claim, or emotional declaration
+    0.5–0.7: Opens with context-setting that's mildly interesting
+    <0.5: Opens mid-sentence, with "so…", "and…", or generic filler
 
 RULES:
 - Return ONLY valid JSON — no markdown, no prose, no explanation outside the JSON.

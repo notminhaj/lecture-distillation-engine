@@ -84,13 +84,13 @@ class TestLLMScorerIntegration:
     @pytest.fixture
     def config(self):
         cfg = MagicMock()
-        cfg.anthropic_api_key = "test-key"
-        cfg.claude_model = "claude-sonnet-4-6"
+        cfg.openai_api_key = "test-key"
+        cfg.openai_model = "gpt-4o-mini"
         return cfg
 
     @pytest.fixture
     def scorer(self, config):
-        with patch("distillation.scoring.llm_scorer.Anthropic"):
+        with patch("distillation.scoring.llm_scorer.OpenAI"):
             return LLMScorer(config)
 
     def test_score_returns_same_count_as_input(
@@ -98,8 +98,8 @@ class TestLLMScorerIntegration:
     ):
         # Mock the API response
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps([make_valid_axes_dict(0)]))]
-        scorer.client.messages.create.return_value = mock_response
+        mock_response.choices = [MagicMock(message=MagicMock(content=json.dumps([make_valid_axes_dict(0)])))]
+        scorer.client.chat.completions.create.return_value = mock_response
 
         segments = [sample_segment]
         result = scorer.score(segments, sample_transcript, domain=Domain.KHUTBA)
@@ -110,8 +110,8 @@ class TestLLMScorerIntegration:
         self, scorer, sample_transcript, sample_segment
     ):
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps([make_valid_axes_dict(0)]))]
-        scorer.client.messages.create.return_value = mock_response
+        mock_response.choices = [MagicMock(message=MagicMock(content=json.dumps([make_valid_axes_dict(0)])))]
+        scorer.client.chat.completions.create.return_value = mock_response
 
         result = scorer.score([sample_segment], sample_transcript, domain=Domain.KHUTBA)
 

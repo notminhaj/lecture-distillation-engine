@@ -27,8 +27,10 @@ def run(
     domain: Domain = typer.Option(Domain.KHUTBA, "--domain", "-d", help="Content domain"),
     clips: int = typer.Option(5, "--clips", "-n", help="Number of clips to generate"),
     no_export: bool = typer.Option(False, "--no-export", help="Skip video export (metadata only)"),
+    fast_export: bool = typer.Option(False, "--fast-export", help="Use stream-copy (fast but ~2-5s keyframe drift)"),
     output_dir: Optional[Path] = typer.Option(None, "--output", "-o", help="Output directory"),
     segmenter: str = typer.Option("semantic", "--segmenter", help="'semantic' or 'sliding_window'"),
+    nominator: str = typer.Option("llm", "--nominator", help="'llm' (default), 'semantic' (old behavior), or 'hybrid'"),
 ) -> None:
     """Run the full distillation pipeline on a lecture."""
     from distillation.config import get_config
@@ -37,10 +39,11 @@ def run(
     config = get_config()
     config.target_clip_count = clips
     config.segmentation_strategy = segmenter
+    config.nomination_strategy = nominator
     if output_dir:
         config.output_dir = output_dir
 
-    pipeline = Pipeline(config=config)
+    pipeline = Pipeline(config=config, force_reencode=not fast_export)
 
     console.print(f"[bold]Running distillation pipeline[/bold]")
     console.print(f"  Input:  {input}")

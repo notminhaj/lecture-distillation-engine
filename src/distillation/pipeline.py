@@ -41,20 +41,24 @@ class Pipeline:
         *,
         transcriber=None,
         segmenter=None,
+        moment_detector=None,
         scorer=None,
         selector=None,
         subtitle_generator=None,
         metadata_generator=None,
         exporter=None,
+        force_reencode: bool = True,
     ) -> None:
         self.cfg = config or get_config()
         self._transcriber = transcriber
         self._segmenter = segmenter
+        self._moment_detector = moment_detector
         self._scorer = scorer
         self._selector = selector
         self._subtitle_gen = subtitle_generator
         self._metadata_gen = metadata_generator
         self._exporter = exporter
+        self._force_reencode = force_reencode
 
     # ── Lazy defaults ──────────────────────────────────────────────────────────
 
@@ -75,6 +79,13 @@ class Pipeline:
                 from distillation.segmentation.sliding_window import SlidingWindowSegmenter
                 self._segmenter = SlidingWindowSegmenter(self.cfg)
         return self._segmenter
+
+    @property
+    def moment_detector(self):
+        if self._moment_detector is None:
+            from distillation.nomination.moment_detector import MomentDetector
+            self._moment_detector = MomentDetector(self.cfg)
+        return self._moment_detector
 
     @property
     def scorer(self):
@@ -108,7 +119,7 @@ class Pipeline:
     def exporter(self):
         if self._exporter is None:
             from distillation.export.video import VideoExporter
-            self._exporter = VideoExporter(self.cfg)
+            self._exporter = VideoExporter(self.cfg, force_reencode=self._force_reencode)
         return self._exporter
 
     # ── Main entry point ───────────────────────────────────────────────────────
@@ -144,8 +155,9 @@ class Pipeline:
 
             # ── Stage 1: Ingestion ─────────────────────────────────────────────
             task = progress.add_task("Ingesting media...", total=None)
+            video_path = Path(source)
             if audio_path is None:
-                audio_path = self._ingest(source)
+                video_path, audio_path = self._ingest(source)
             progress.update(task, completed=True)
 
             # ── Stage 2: Transcription ─────────────────────────────────────────
@@ -157,10 +169,38 @@ class Pipeline:
                 transcript.duration,
             )
 
-            # ── Stage 3: Segmentation ──────────────────────────────────────────
-            progress.update(task, description="Segmenting into semantic units...")
-            segments = self.segmenter.segment(transcript)
-            logger.info("Produced %d segments", len(segments))
+            # ── Stage 3: Candidate generation (nomination / segmentation) ─────
+            strategy = self.cfg.nomination_strategy
+            segments = []
+
+            if strategy in ("llm", "hybrid"):
+                progress.update(task, description="Detecting clip-worthy moments (LLM)...")
+                nominated = self.moment_detector.detect(
+                    transcript,
+                    domain=domain,
+                    target_count=self.cfg.target_clip_count * 2,
+                )
+                segments.extend(nominated)
+                logger.info("LLM nominated %d candidate segments", len(nominated))
+
+            if strategy in ("semantic", "hybrid"):
+                progress.update(task, description="Segmenting into semantic units...")
+                semantic_segments = self.segmenter.segment(transcript)
+                if strategy == "hybrid":
+                    # Deduplicate: only add semantic segments that don't heavily
+                    # overlap with already-nominated segments
+                    for ss in semantic_segments:
+                        if not self._overlaps_existing(ss, segments):
+                            segments.append(ss)
+                else:
+                    segments = semantic_segments
+                logger.info("Semantic segmenter produced %d segments", len(semantic_segments))
+
+            # Re-number segment IDs to be sequential
+            for i, seg in enumerate(segments):
+                seg.segment_id = i
+
+            logger.info("Total candidate segments: %d", len(segments))
 
             # ── Stage 4: Scoring ───────────────────────────────────────────────
             progress.update(task, description="Scoring segments (LLM + acoustic)...")
@@ -184,7 +224,7 @@ class Pipeline:
             if export_video:
                 progress.update(task, description="Cutting clips...")
                 for clip in selected:
-                    self.exporter.export(clip, source_video=source)
+                    self.exporter.export(clip, source_video=str(video_path))
 
         return PipelineResult(
             source_path=source,
@@ -197,8 +237,21 @@ class Pipeline:
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
-    def _ingest(self, source: str) -> Path:
-        """Download (if URL) and extract audio."""
+    @staticmethod
+    def _overlaps_existing(candidate, existing: list, threshold: float = 0.5) -> bool:
+        """Check if candidate segment overlaps significantly with any existing segment."""
+        from distillation.models import Segment
+        for seg in existing:
+            overlap_start = max(candidate.start, seg.start)
+            overlap_end = min(candidate.end, seg.end)
+            overlap = max(0, overlap_end - overlap_start)
+            shorter_dur = min(candidate.duration, seg.duration)
+            if shorter_dur > 0 and overlap / shorter_dur > threshold:
+                return True
+        return False
+
+    def _ingest(self, source: str) -> tuple[Path, Path]:
+        """Download (if URL) and extract audio.  Returns (video_path, audio_path)."""
         if source.startswith("http://") or source.startswith("https://"):
             from distillation.ingestion.downloader import Downloader
             dl = Downloader(self.cfg)
@@ -208,4 +261,5 @@ class Pipeline:
 
         from distillation.ingestion.extractor import AudioExtractor
         extractor = AudioExtractor(self.cfg)
-        return extractor.extract(video_path)
+        audio_path = extractor.extract(video_path)
+        return video_path, audio_path

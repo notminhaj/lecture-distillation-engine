@@ -106,6 +106,25 @@ class Segment(BaseModel):
         return word_count / self.duration if self.duration > 0 else 0.0
 
 
+# ── Nomination models ──────────────────────────────────────────────────────
+
+class NominatedMoment(BaseModel):
+    """
+    An LLM-nominated clip-worthy moment, intermediate between raw LLM output
+    and a snapped Segment.  The moment detector produces these; timestamp
+    snapping converts them into Segments for the scoring pipeline.
+    """
+    approximate_start: float
+    approximate_end: float
+    rationale: str
+    opening_line: str
+    snapped_segment: Optional["Segment"] = None  # filled after timestamp snapping
+
+    @property
+    def approximate_duration(self) -> float:
+        return self.approximate_end - self.approximate_start
+
+
 # ── Scoring models ─────────────────────────────────────────────────────────────
 
 class EngagementAxes(BaseModel):

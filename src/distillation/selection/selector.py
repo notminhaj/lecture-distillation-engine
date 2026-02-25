@@ -32,12 +32,12 @@ logger = logging.getLogger(__name__)
 # Keys must match EngagementAxes field names.
 DOMAIN_WEIGHTS: dict[Domain, dict[str, float]] = {
     Domain.KHUTBA: {
-        "semantic_density": 0.15,
-        "emotional_resonance": 0.20,
-        "standalone_coherence": 0.25,  # up-weighted: viewer has no context
+        "semantic_density": 0.10,
+        "emotional_resonance": 0.25,    # up-weighted: emotion drives short-form engagement
+        "standalone_coherence": 0.20,   # viewer has no context
         "narrative_completeness": 0.15,
-        "domain_integrity": 0.20,      # up-weighted: theological accuracy matters
-        "hook_strength": 0.05,
+        "domain_integrity": 0.15,       # theological accuracy matters
+        "hook_strength": 0.15,          # up-weighted: scroll-stopping openings matter
     },
     Domain.PODCAST: {
         "semantic_density": 0.20,

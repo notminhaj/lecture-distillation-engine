@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class VideoExporter:
     """Cuts clips from source video and writes all associated assets."""
 
-    def __init__(self, config: Config, force_reencode: bool = False) -> None:
+    def __init__(self, config: Config, force_reencode: bool = True) -> None:
         self.cfg = config
         self.force_reencode = force_reencode
         self.output_dir = config.output_dir

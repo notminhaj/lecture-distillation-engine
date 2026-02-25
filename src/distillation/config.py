@@ -48,6 +48,12 @@ class Config(BaseSettings):
     weight_domain_integrity: float = 0.15
     weight_hook_strength: float = 0.10
 
+    # ── Nomination ────────────────────────────────────────────────────────────
+    nomination_strategy: str = Field(
+        "llm",
+        description="'llm' (LLM moment detection), 'semantic' (old segmentation), or 'hybrid' (union)",
+    )
+
     # ── Segmentation ───────────────────────────────────────────────────────────
     segmentation_strategy: str = Field(
         "semantic",
