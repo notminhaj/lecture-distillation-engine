@@ -22,22 +22,26 @@ Domain-specific weighting:
 from __future__ import annotations
 
 import logging
+import re
 
 from distillation.config import Config
-from distillation.models import Clip, Domain, ScoredSegment
+from distillation.models import Clip, Domain, EngagementAxes, Segment, ScoredSegment
 
 logger = logging.getLogger(__name__)
+
+# Weight for acoustic_energy in the composite score (speaker emphasis signal).
+ACOUSTIC_ENERGY_WEIGHT = 0.05
 
 # Per-domain scoring weight overrides.
 # Keys must match EngagementAxes field names.
 DOMAIN_WEIGHTS: dict[Domain, dict[str, float]] = {
     Domain.KHUTBA: {
         "semantic_density": 0.10,
-        "emotional_resonance": 0.25,    # up-weighted: emotion drives short-form engagement
-        "standalone_coherence": 0.20,   # viewer has no context
-        "narrative_completeness": 0.15,
-        "domain_integrity": 0.15,       # theological accuracy matters
-        "hook_strength": 0.15,          # up-weighted: scroll-stopping openings matter
+        "emotional_resonance": 0.15,    # reduced: emotion ≠ completeness
+        "standalone_coherence": 0.25,   # increased: cold viewer comprehension
+        "narrative_completeness": 0.22, # increased: open+close a thought
+        "domain_integrity": 0.15,       # unchanged
+        "hook_strength": 0.13,          # minor reduction
     },
     Domain.PODCAST: {
         "semantic_density": 0.20,
@@ -80,12 +84,26 @@ class ClipSelector:
         Returns Clips ordered by source timeline (not score rank), which
         makes the output package coherent for playlist-style consumption.
         """
-        # ── 1. Filter by duration constraints ─────────────────────────────────
+        # ── 1. Filter by duration constraints and completeness gate ──────────
         weights = DOMAIN_WEIGHTS.get(domain, DOMAIN_WEIGHTS[Domain.GENERIC])
+        min_nc = self.cfg.min_narrative_completeness
         candidates = [
             ss for ss in scored
             if self.cfg.min_clip_duration <= ss.segment.duration <= self.cfg.max_clip_duration
+            and ss.scores.narrative_completeness >= min_nc
         ]
+
+        # Log how many were filtered by completeness gate
+        duration_ok = [
+            ss for ss in scored
+            if self.cfg.min_clip_duration <= ss.segment.duration <= self.cfg.max_clip_duration
+        ]
+        completeness_filtered = len(duration_ok) - len(candidates)
+        if completeness_filtered > 0:
+            logger.info(
+                "Completeness gate (%.2f) filtered out %d segments",
+                min_nc, completeness_filtered,
+            )
 
         if len(candidates) < self.cfg.target_clip_count:
             logger.warning(
@@ -96,6 +114,12 @@ class ClipSelector:
                 self.cfg.max_clip_duration,
                 self.cfg.target_clip_count,
             )
+
+        # ── 1b. Generate adjacent-segment merge candidates ────────────────────
+        merge_candidates = self._generate_merge_candidates(candidates)
+        if merge_candidates:
+            logger.info("Generated %d merge candidates from adjacent segments", len(merge_candidates))
+            candidates = candidates + merge_candidates
 
         # ── 2. Rank by domain-weighted composite score ─────────────────────────
         ranked = sorted(candidates, key=lambda ss: self._weighted_score(ss, weights), reverse=True)
@@ -125,18 +149,131 @@ class ClipSelector:
         logger.info("Selected %d clips", len(clips))
         return clips
 
-    @staticmethod
-    def _weighted_score(ss: ScoredSegment, weights: dict[str, float]) -> float:
+    @classmethod
+    def _weighted_score(cls, ss: ScoredSegment, weights: dict[str, float]) -> float:
         s = ss.scores
-        total_weight = sum(weights.values())
+
+        # Apply energy_onset_ratio as a multiplier on hook_strength:
+        # ratio > 1 means speaker starts strong → boost hook score
+        # ratio < 1 means weak opening (silence/throat-clear) → penalise
+        # Clamp multiplier to [0.7, 1.3] to avoid extreme swings
+        onset_multiplier = max(0.7, min(1.3, ss.energy_onset_ratio))
+        effective_hook = s.hook_strength * onset_multiplier
+
+        # Structural completeness: penalise segments that start mid-sentence
+        # or end without terminal punctuation
+        structural_mult = cls._structural_completeness_penalty(ss)
+        effective_narrative = s.narrative_completeness * structural_mult
+
+        total_weight = sum(weights.values()) + ACOUSTIC_ENERGY_WEIGHT
         return (
             s.semantic_density * weights.get("semantic_density", 0)
             + s.emotional_resonance * weights.get("emotional_resonance", 0)
             + s.standalone_coherence * weights.get("standalone_coherence", 0)
-            + s.narrative_completeness * weights.get("narrative_completeness", 0)
+            + effective_narrative * weights.get("narrative_completeness", 0)
             + s.domain_integrity * weights.get("domain_integrity", 0)
-            + s.hook_strength * weights.get("hook_strength", 0)
+            + effective_hook * weights.get("hook_strength", 0)
+            + ss.acoustic_energy * ACOUSTIC_ENERGY_WEIGHT
         ) / total_weight
+
+    @staticmethod
+    def _structural_completeness_penalty(ss: ScoredSegment) -> float:
+        """
+        Returns a multiplier in [0.7, 1.0] that penalises structurally
+        incomplete segments:
+          - Starts mid-sentence (first char is lowercase, no sentence boundary)
+          - Ends without terminal punctuation (., !, ?)
+
+        Applied as a multiplier on the narrative_completeness component.
+        """
+        text = ss.segment.text.strip()
+        if not text:
+            return 1.0
+
+        penalty = 1.0
+
+        # Penalise mid-sentence starts: first non-whitespace char is lowercase
+        # (but allow quotes, Arabic, digits — only penalise clear lowercase Latin)
+        first_char = text[0]
+        if first_char.isalpha() and first_char.islower():
+            penalty -= 0.15
+
+        # Penalise missing terminal punctuation
+        if not re.search(r'[.!?"\u06D4]$', text):  # \u06D4 = Arabic full stop
+            penalty -= 0.15
+
+        return max(0.7, penalty)
+
+    def _generate_merge_candidates(
+        self, scored: list[ScoredSegment],
+    ) -> list[ScoredSegment]:
+        """
+        Generate merged [N, N+1] candidates where:
+          - Combined duration <= max_clip_duration
+          - First segment has narrative_completeness < 0.5 (likely incomplete)
+
+        Scores are interpolated from both segments with a completeness bonus,
+        since merging is expected to improve narrative arc.
+        """
+        # Sort by timeline to find true adjacencies
+        by_time = sorted(scored, key=lambda ss: ss.segment.start)
+        merged: list[ScoredSegment] = []
+
+        for i in range(len(by_time) - 1):
+            a, b = by_time[i], by_time[i + 1]
+            combined_duration = b.segment.end - a.segment.start
+
+            if combined_duration > self.cfg.max_clip_duration:
+                continue
+            if combined_duration < self.cfg.min_clip_duration:
+                continue
+            if a.scores.narrative_completeness >= 0.5 and a.scores.standalone_coherence >= 0.5:
+                continue
+
+            # Build merged segment
+            merged_segment = Segment(
+                segment_id=-(i + 1),  # negative IDs for synthetic segments
+                start=a.segment.start,
+                end=b.segment.end,
+                text=a.segment.text + " " + b.segment.text,
+                transcript_segment_ids=(
+                    a.segment.transcript_segment_ids + b.segment.transcript_segment_ids
+                ),
+            )
+
+            # Interpolate scores: weighted average biased toward the better segment,
+            # plus a per-axis completeness bonus for whichever axis triggered the merge
+            sa, sb = a.scores, b.scores
+            nc_was_weak = a.scores.narrative_completeness < 0.5
+            sc_was_weak = a.scores.standalone_coherence < 0.5
+            merged_axes = EngagementAxes(
+                semantic_density=(sa.semantic_density + sb.semantic_density) / 2,
+                emotional_resonance=max(sa.emotional_resonance, sb.emotional_resonance),
+                standalone_coherence=min(
+                    1.0,
+                    (sa.standalone_coherence + sb.standalone_coherence) / 2
+                    + (0.10 if sc_was_weak else 0.0),
+                ),
+                narrative_completeness=min(
+                    1.0,
+                    (sa.narrative_completeness + sb.narrative_completeness) / 2
+                    + (0.10 if nc_was_weak else 0.0),
+                ),
+                domain_integrity=min(sa.domain_integrity, sb.domain_integrity),
+                hook_strength=sa.hook_strength,  # hook comes from the first segment
+                llm_rationale=f"Merged segments {a.segment.segment_id}+{b.segment.segment_id}",
+            )
+
+            merged_scored = ScoredSegment(
+                segment=merged_segment,
+                scores=merged_axes,
+                acoustic_energy=(a.acoustic_energy + b.acoustic_energy) / 2,
+                energy_onset_ratio=a.energy_onset_ratio,  # onset from first segment
+                speech_rate_wpm=(a.speech_rate_wpm + b.speech_rate_wpm) / 2,
+            )
+            merged.append(merged_scored)
+
+        return merged
 
     @staticmethod
     def _overlaps_any(candidate: ScoredSegment, selected: list[ScoredSegment]) -> bool:

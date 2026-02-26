@@ -64,12 +64,22 @@ class AcousticScorer:
             seg_rms = float(np.sqrt(np.mean(segment_audio ** 2)))
             normalised_energy = min(seg_rms / max_rms, 1.0)
 
+            # Energy onset ratio: energy in first 3s vs segment average
+            # High ratio → natural hook (speaker starts strong)
+            onset_samples = min(int(3.0 * sr), len(segment_audio))
+            if onset_samples > 0 and seg_rms > 0:
+                onset_rms = float(np.sqrt(np.mean(segment_audio[:onset_samples] ** 2)))
+                energy_onset_ratio = onset_rms / seg_rms
+            else:
+                energy_onset_ratio = 1.0
+
             # Words per minute from transcript word count
             word_count = len(seg.text.split())
             wpm = (word_count / seg.duration) * 60.0 if seg.duration > 0 else 0.0
 
             results[seg.segment_id] = {
                 "energy": round(normalised_energy, 4),
+                "energy_onset_ratio": round(energy_onset_ratio, 4),
                 "wpm": round(wpm, 1),
             }
 

@@ -55,6 +55,11 @@ Domain integrity rules:
   emotional_resonance for their rhetorical function.
 - The clip should stand alone as a coherent reminder or lesson, not leave the
   listener mid-argument.
+Completeness rules (strictly enforced):
+- A clip that opens with "but", "so", or "and" referencing unheard content is ALWAYS
+  < 0.5 on standalone_coherence, regardless of emotional strength.
+- A hadith stated without its lesson, or a ruling without its basis, is ALWAYS
+  < 0.7 on narrative_completeness.
 """,
     Domain.PODCAST: """
 You are evaluating clips from a conversational podcast.
@@ -110,11 +115,13 @@ class LLMScorer(BaseScorer):
                 segments, str(audio_path)
             )
 
-        # ── LLM scoring in batches ─────────────────────────────────────────────
+        # ── LLM scoring in batches with sliding context ─────────────────────
         all_axes: list[EngagementAxes] = []
         for batch_start in range(0, len(segments), BATCH_SIZE):
             batch = segments[batch_start: batch_start + BATCH_SIZE]
-            batch_axes = self._score_batch(batch, transcript, domain)
+            batch_axes = self._score_batch(
+                batch, transcript, domain, all_segments=segments,
+            )
             all_axes.extend(batch_axes)
 
         # ── Merge into ScoredSegment objects ────────────────────────────────────
@@ -125,6 +132,7 @@ class LLMScorer(BaseScorer):
                 segment=segment,
                 scores=axes,
                 acoustic_energy=af.get("energy", 0.0),
+                energy_onset_ratio=af.get("energy_onset_ratio", 1.0),
                 speech_rate_wpm=af.get("wpm", 0.0),
             ))
 
@@ -140,6 +148,7 @@ class LLMScorer(BaseScorer):
         batch: list[Segment],
         transcript: Transcript,
         domain: Domain,
+        all_segments: list[Segment] | None = None,
     ) -> list[EngagementAxes]:
         """
         Score a batch of segments in a single API call.
@@ -147,7 +156,7 @@ class LLMScorer(BaseScorer):
         Returns EngagementAxes for each segment in the same order.
         """
         system_prompt = self._build_system_prompt(domain)
-        user_prompt = self._build_user_prompt(batch, transcript)
+        user_prompt = self._build_user_prompt(batch, transcript, all_segments)
 
         logger.debug("Scoring batch of %d segments via OpenAI", len(batch))
 
@@ -175,7 +184,15 @@ SCORING AXES (all 0.0–1.0, two decimal places):
 - semantic_density: Information per second. High = every sentence adds new value.
 - emotional_resonance: Does the speaker's language evoke feeling, urgency, or awe?
 - standalone_coherence: Can a cold viewer (no prior context) understand this clip?
+  Rubric:
+    0.8+: Fully self-contained — no pronouns, references, or arguments that assume prior listening
+    0.5–0.7: Mostly clear, but contains 1-2 minor references a new viewer might miss
+    <0.5: Depends on prior context ("as I mentioned", "this hadith we discussed") or begins mid-argument
 - narrative_completeness: Does it open AND close a thought (or close with deliberate tension)?
+  Rubric:
+    0.8+: Opens with a complete idea framing AND ends with resolution, conclusion, or call-to-action
+    0.5–0.7: Has a clear opening OR a clear close, but not both; or closes on a soft trailing thought
+    <0.5: Starts mid-sentence/mid-argument, or ends abruptly without resolution; thought is severed
 - domain_integrity: Is domain-specific content presented correctly and completely?
 - hook_strength: Would the FIRST 3 seconds stop a scroll on TikTok?
   Quote the exact opening words of the segment in your rationale and explain WHY they would or wouldn't hook.
@@ -193,11 +210,18 @@ RULES:
 - llm_rationale: 1–2 sentences explaining the key strength and weakness.
 """
 
-    def _build_user_prompt(self, batch: list[Segment], transcript: Transcript) -> str:
-        # Provide condensed context so model can evaluate standalone_coherence
-        # We use the first 500 words of the full transcript as background
-        context_words = transcript.full_text.split()[:500]
-        context_snippet = " ".join(context_words)
+    def _build_user_prompt(
+        self,
+        batch: list[Segment],
+        transcript: Transcript,
+        all_segments: list[Segment] | None = None,
+    ) -> str:
+        # Sliding context window: ~200 words before the first segment in the
+        # batch and ~200 words after the last.  This gives the LLM local context
+        # to accurately judge standalone_coherence and narrative_completeness,
+        # especially for segments deep into the lecture where the old fixed
+        # 500-word head was useless.
+        context_snippet = self._build_sliding_context(batch, transcript, all_segments)
 
         segments_json = json.dumps([
             {
@@ -210,7 +234,7 @@ RULES:
             for s in batch
         ], ensure_ascii=False, indent=2)
 
-        return f"""FULL LECTURE CONTEXT (first ~500 words for coherence evaluation):
+        return f"""LECTURE CONTEXT (surrounding the segments below):
 {context_snippet}
 
 ---
@@ -218,6 +242,53 @@ SEGMENTS TO SCORE:
 {segments_json}
 
 Return a JSON array with one scoring object per segment."""
+
+    @staticmethod
+    def _build_sliding_context(
+        batch: list[Segment],
+        transcript: Transcript,
+        all_segments: list[Segment] | None = None,
+        context_words: int = 200,
+    ) -> str:
+        """Build a sliding context window around the batch from neighbouring segments."""
+        if not all_segments or len(all_segments) <= len(batch):
+            # Fallback: use first 500 words of full transcript (old behaviour)
+            words = transcript.full_text.split()[:500]
+            return " ".join(words)
+
+        batch_ids = {s.segment_id for s in batch}
+        first_batch_idx = None
+        last_batch_idx = None
+        for i, seg in enumerate(all_segments):
+            if seg.segment_id in batch_ids:
+                if first_batch_idx is None:
+                    first_batch_idx = i
+                last_batch_idx = i
+
+        if first_batch_idx is None:
+            words = transcript.full_text.split()[:500]
+            return " ".join(words)
+
+        # Collect text before the batch (~200 words)
+        before_text = " ".join(
+            seg.text for seg in all_segments[:first_batch_idx]
+        )
+        before_words = before_text.split()[-context_words:] if before_text else []
+
+        # Collect text after the batch (~200 words)
+        after_text = " ".join(
+            seg.text for seg in all_segments[last_batch_idx + 1:]
+        )
+        after_words = after_text.split()[:context_words] if after_text else []
+
+        parts = []
+        if before_words:
+            parts.append("[...] " + " ".join(before_words))
+        parts.append("[BATCH SEGMENTS ARE HERE]")
+        if after_words:
+            parts.append(" ".join(after_words) + " [...]")
+
+        return "\n".join(parts)
 
     @staticmethod
     def _parse_response(raw: str, expected_count: int) -> list[EngagementAxes]:

@@ -40,6 +40,11 @@ class Config(BaseSettings):
     max_clip_duration: float = Field(90.0, description="Maximum clip length in seconds")
     target_clip_count: int = Field(5, description="Clips to produce per lecture")
 
+    # ── Selection gates ───────────────────────────────────────────────────────
+    min_narrative_completeness: float = Field(
+        0.5, description="Segments below this narrative_completeness are excluded before ranking"
+    )
+
     # ── Scoring weights (sum need not equal 1; they are L1-normalised) ─────────
     weight_semantic_density: float = 0.20
     weight_emotional_resonance: float = 0.20
@@ -70,6 +75,28 @@ class Config(BaseSettings):
     semantic_similarity_threshold: float = Field(
         0.35,
         description="Cosine distance above which a new segment starts",
+    )
+
+    # ── Boundary refinement ──────────────────────────────────────────────────
+    sentence_boundary_window: float = Field(
+        5.0, description="±seconds to search for sentence boundary when snapping"
+    )
+    silence_threshold_ms: float = Field(
+        600.0, description="Minimum silence gap (ms) to prefer as boundary"
+    )
+    hook_protection_window: float = Field(
+        3.0, description="Seconds at segment start to check for hook energy"
+    )
+    enable_boundary_refinement: bool = Field(
+        True, description="Toggle boundary refinement on/off"
+    )
+
+    # ── Download ─────────────────────────────────────────────────────────────
+    cookies_from_browser: str = Field(
+        "", description="Browser to extract cookies from for yt-dlp (e.g. 'chrome', 'firefox', 'edge')"
+    )
+    cookies_file: str = Field(
+        "", description="Path to a Netscape-format cookies.txt file for yt-dlp"
     )
 
     # ── Domain ────────────────────────────────────────────────────────────────

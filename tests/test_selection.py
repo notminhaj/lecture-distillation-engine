@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from distillation.models import Domain, EngagementAxes, Segment, ScoredSegment
-from distillation.selection.selector import ClipSelector
+from distillation.selection.selector import ClipSelector, DOMAIN_WEIGHTS
 
 
 def make_scored_segment(
@@ -14,12 +14,17 @@ def make_scored_segment(
     start: float,
     end: float,
     score_override: float = 0.5,
+    *,
+    narrative_completeness: float | None = None,
+    standalone_coherence: float | None = None,
 ) -> ScoredSegment:
+    nc = narrative_completeness if narrative_completeness is not None else score_override
+    sc = standalone_coherence if standalone_coherence is not None else score_override
     axes = EngagementAxes(
         semantic_density=score_override,
         emotional_resonance=score_override,
-        standalone_coherence=score_override,
-        narrative_completeness=score_override,
+        standalone_coherence=sc,
+        narrative_completeness=nc,
         domain_integrity=score_override,
         hook_strength=score_override,
     )
@@ -39,6 +44,7 @@ def config():
     cfg.min_clip_duration = 30.0
     cfg.max_clip_duration = 90.0
     cfg.target_clip_count = 3
+    cfg.min_narrative_completeness = 0.5
     return cfg
 
 
@@ -101,3 +107,45 @@ class TestClipSelector:
         # First clip by score (seg 0 = 0.9) should appear
         selected_ids = {c.scored_segment.segment.segment_id for c in clips}
         assert 0 in selected_ids
+
+    def test_completeness_gate_filters_at_threshold(self, config):
+        """nc=0.45 is filtered out; nc=0.55 passes through."""
+        selector = ClipSelector(config)
+        below = make_scored_segment(0, 0.0, 45.0, score_override=0.9, narrative_completeness=0.45)
+        above = make_scored_segment(1, 60.0, 105.0, score_override=0.5, narrative_completeness=0.55)
+        clips = selector.select([below, above], domain=Domain.GENERIC)
+        selected_ids = {c.scored_segment.segment.segment_id for c in clips}
+        assert 0 not in selected_ids, "nc=0.45 should be filtered by completeness gate"
+        assert 1 in selected_ids, "nc=0.55 should pass the completeness gate"
+
+    def test_merge_trigger_fires_on_low_standalone_coherence(self, config):
+        """A segment with nc=0.6 but sc=0.3 should generate a merge candidate."""
+        selector = ClipSelector(config)
+        # Segment A: nc fine, sc weak — should trigger merge
+        seg_a = make_scored_segment(
+            0, 0.0, 40.0, score_override=0.6,
+            narrative_completeness=0.6,
+            standalone_coherence=0.3,
+        )
+        # Segment B: adjacent, fine scores
+        seg_b = make_scored_segment(
+            1, 40.0, 75.0, score_override=0.6,
+            narrative_completeness=0.6,
+            standalone_coherence=0.7,
+        )
+        merged = selector._generate_merge_candidates([seg_a, seg_b])
+        assert len(merged) == 1, (
+            "Expected exactly one merge candidate when sc < 0.5 on first segment"
+        )
+        # Verify the sc bonus was applied
+        assert merged[0].scores.standalone_coherence > (0.3 + 0.7) / 2, (
+            "Merged sc should include the 0.10 bonus for the weak sc trigger"
+        )
+
+    def test_khutba_weights_sum_to_one(self):
+        """Regression guard: DOMAIN_WEIGHTS[Domain.KHUTBA] must sum to exactly 1.0."""
+        weights = DOMAIN_WEIGHTS[Domain.KHUTBA]
+        total = sum(weights.values())
+        assert abs(total - 1.0) < 1e-9, (
+            f"KHUTBA weights sum to {total:.4f}, expected 1.0"
+        )

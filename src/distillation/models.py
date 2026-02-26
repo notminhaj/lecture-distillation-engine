@@ -169,6 +169,7 @@ class ScoredSegment(BaseModel):
     segment: Segment
     scores: EngagementAxes
     acoustic_energy: float = 0.0    # normalised RMS of audio in this segment
+    energy_onset_ratio: float = 1.0  # energy first 3s / segment avg; >1 = strong opening
     speech_rate_wpm: float = 0.0    # words per minute
 
     @property

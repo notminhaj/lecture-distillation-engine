@@ -32,6 +32,7 @@ class SlidingWindowSegmenter(BaseSegmenter):
     """
 
     def __init__(self, config: Config) -> None:
+        self._config = config
         self.window_size = config.sliding_window_size
         self.stride = config.sliding_window_stride
         self.min_duration = config.min_clip_duration
@@ -65,6 +66,11 @@ class SlidingWindowSegmenter(BaseSegmenter):
                     seg_id += 1
 
             window_start += self.stride
+
+        # Boundary refinement
+        from distillation.segmentation.boundary_refiner import BoundaryRefiner
+        refiner = BoundaryRefiner(self._config)
+        results = refiner.refine(results, transcript)
 
         logger.info(
             "SlidingWindowSegmenter produced %d segments (window=%.0fs stride=%.0fs)",

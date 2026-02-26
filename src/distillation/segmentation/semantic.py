@@ -96,8 +96,14 @@ class SemanticSegmenter(BaseSegmenter):
 
         # ── 5. Merge short segments ────────────────────────────────────────────
         merged = self._merge_short_segments(raw_segments, ts_segs)
-        logger.info("SemanticSegmenter produced %d segments", len(merged))
-        return merged
+
+        # ── 6. Boundary refinement ──────────────────────────────────────────
+        from distillation.segmentation.boundary_refiner import BoundaryRefiner
+        refiner = BoundaryRefiner(self.cfg)
+        refined = refiner.refine(merged, transcript)
+
+        logger.info("SemanticSegmenter produced %d segments", len(refined))
+        return refined
 
     @staticmethod
     def _consecutive_similarities(embeddings: np.ndarray) -> list[float]:
