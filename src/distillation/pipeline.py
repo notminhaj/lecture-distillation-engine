@@ -116,6 +116,11 @@ class Pipeline:
         return self._metadata_gen
 
     @property
+    def word_boundary_refiner(self):
+        from distillation.word_boundary_refiner import WordBoundaryRefiner
+        return WordBoundaryRefiner()
+
+    @property
     def exporter(self):
         if self._exporter is None:
             from distillation.export.video import VideoExporter
@@ -209,6 +214,11 @@ class Pipeline:
             # ── Stage 5: Selection ─────────────────────────────────────────────
             progress.update(task, description="Selecting top clips...")
             selected = self.selector.select(scored, domain=domain)
+
+            # ── Stage 5b: Word boundary refinement ───────────────────────
+            if self.cfg.enable_word_boundary_refinement:
+                progress.update(task, description="Refining clip word boundaries...")
+                selected = self.word_boundary_refiner.refine_all(selected, transcript)
 
             # ── Stage 6: Subtitle generation ──────────────────────────────────
             progress.update(task, description="Generating subtitles...")

@@ -90,6 +90,13 @@ class Config(BaseSettings):
     enable_boundary_refinement: bool = Field(
         True, description="Toggle boundary refinement on/off"
     )
+    enable_word_boundary_refinement: bool = Field(
+        True,
+        description=(
+            "Run WordBoundaryRefiner after selection to snap clip edges "
+            "to exact Whisper word boundaries"
+        ),
+    )
 
     # ── Download ─────────────────────────────────────────────────────────────
     cookies_from_browser: str = Field(
