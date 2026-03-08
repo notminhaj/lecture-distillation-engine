@@ -201,6 +201,19 @@ SCORING AXES (all 0.0–1.0, two decimal places):
     0.5–0.7: Opens with context-setting that's mildly interesting
     <0.5: Opens mid-sentence, with "so…", "and…", or generic filler
 
+CRITICAL — TRANSCRIPT-ONLY EVALUATION:
+Evaluate standalone_coherence and narrative_completeness SOLELY from the literal words
+in the CLIP TRANSCRIPT. Do NOT use your training knowledge of Islamic history, hadith
+narratives, or any external context to infer meaning that is absent from the clip text.
+- If the transcript opens with a referential phrase ("as you (all) know", "as I/we
+  mentioned", "as we said", "the story", or "and so as"), standalone_coherence MUST
+  be ≤ 0.4 — the clip presupposes unheard context.
+- If the transcript ends WITHOUT explicitly stating the outcome, ruling, or lesson
+  (i.e. the narrative resolution is not in the clip text itself), narrative_completeness
+  MUST be ≤ 0.4.
+- A high score on either axis is ONLY valid when the evidence is entirely within the
+  transcript text. Rationale must cite the exact words that justify the score.
+
 RULES:
 - Return ONLY valid JSON — no markdown, no prose, no explanation outside the JSON.
 - Return a JSON array with exactly one object per input segment, in the same order.

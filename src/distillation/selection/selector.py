@@ -165,11 +165,17 @@ class ClipSelector:
         structural_mult = cls._structural_completeness_penalty(ss)
         effective_narrative = s.narrative_completeness * structural_mult
 
+        # Referential opener: cap standalone_coherence and narrative_completeness
+        # for segments whose first words presuppose unheard context.
+        sc_cap, nc_cap = cls._referential_opener_penalty(ss.segment.text)
+        effective_standalone = min(s.standalone_coherence, sc_cap)
+        effective_narrative = min(effective_narrative, nc_cap)
+
         total_weight = sum(weights.values()) + ACOUSTIC_ENERGY_WEIGHT
         return (
             s.semantic_density * weights.get("semantic_density", 0)
             + s.emotional_resonance * weights.get("emotional_resonance", 0)
-            + s.standalone_coherence * weights.get("standalone_coherence", 0)
+            + effective_standalone * weights.get("standalone_coherence", 0)
             + effective_narrative * weights.get("narrative_completeness", 0)
             + s.domain_integrity * weights.get("domain_integrity", 0)
             + effective_hook * weights.get("hook_strength", 0)
@@ -203,6 +209,38 @@ class ClipSelector:
             penalty -= 0.15
 
         return max(0.7, penalty)
+
+    @staticmethod
+    def _referential_opener_penalty(text: str) -> tuple[float, float]:
+        """
+        Returns cap values (sc_cap, nc_cap) for standalone_coherence and
+        narrative_completeness when the segment opens with a referential phrase
+        that presupposes unheard context.
+
+        If a referential pattern is detected in the first 20 words, both caps
+        are set to 0.5 — the LLM score cannot exceed this regardless of what it
+        returned.  Returns (1.0, 1.0) (no cap) when no pattern is found.
+        """
+        opening = " ".join(text.split()[:20]).lower()
+        referential_patterns = [
+            r"\bas you( all)? know\b",
+            r"\bas (i|we) (mentioned|said|discussed|noted|explained)\b",
+            r"\band so as\b",
+            r"\bcontinuing (from|with)\b",
+            r"\bas (was )?mentioned\b",
+            r"\bgoing back to\b",
+            r"\bthe story (we|i) (mentioned|told|discussed)\b",
+            r"\bremember (when|what|how)\b",
+            r"\blike (i|we) said\b",
+        ]
+        for pattern in referential_patterns:
+            if re.search(pattern, opening):
+                logger.debug(
+                    "Referential opener detected in segment — capping sc/nc at 0.5. "
+                    "Opening: %r", opening[:80],
+                )
+                return 0.5, 0.5
+        return 1.0, 1.0
 
     def _generate_merge_candidates(
         self, scored: list[ScoredSegment],
