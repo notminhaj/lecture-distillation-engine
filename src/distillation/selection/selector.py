@@ -182,8 +182,18 @@ class ClipSelector:
             + ss.acoustic_energy * ACOUSTIC_ENERGY_WEIGHT
         ) / total_weight
 
-    @staticmethod
-    def _structural_completeness_penalty(ss: ScoredSegment) -> float:
+    # Words that definitively cannot open an independent thought when lowercase.
+    # Their presence at position 0 (lowercase) means the segment is mid-sentence.
+    _CONTINUATION_STARTERS = frozenset({
+        "and", "but", "or", "so", "yet", "for", "nor",
+        "however", "therefore", "thus", "hence", "because", "since",
+        "immensely", "completely", "actually", "basically", "essentially",
+        "furthermore", "moreover", "additionally", "consequently",
+        "like",  # "like all the prophets" = mid-comparison
+    })
+
+    @classmethod
+    def _structural_completeness_penalty(cls, ss: ScoredSegment) -> float:
         """
         Returns a multiplier in [0.7, 1.0] that penalises structurally
         incomplete segments:
@@ -191,6 +201,10 @@ class ClipSelector:
           - Ends without terminal punctuation (., !, ?)
 
         Applied as a multiplier on the narrative_completeness component.
+
+        Continuation-word starters (and, but, immensely, etc.) receive a
+        stronger penalty (-0.25) since they definitively indicate a mid-sentence
+        clip regardless of capitalisation.
         """
         text = ss.segment.text.strip()
         if not text:
@@ -202,7 +216,12 @@ class ClipSelector:
         # (but allow quotes, Arabic, digits — only penalise clear lowercase Latin)
         first_char = text[0]
         if first_char.isalpha() and first_char.islower():
-            penalty -= 0.15
+            first_word = text.split()[0].lower().strip(".,!?")
+            if first_word in cls._CONTINUATION_STARTERS:
+                # Strong penalty: continuation word guarantees mid-sentence position
+                penalty -= 0.25
+            else:
+                penalty -= 0.15
 
         # Penalise missing terminal punctuation
         if not re.search(r'[.!?"\u06D4]$', text):  # \u06D4 = Arabic full stop
@@ -223,15 +242,30 @@ class ClipSelector:
         """
         opening = " ".join(text.split()[:20]).lower()
         referential_patterns = [
+            # Explicit audience-knowledge references
             r"\bas you( all)? know\b",
+            r"\bwe all know\b",
+            # Simple present referential ("as i mentioned", "as we said")
             r"\bas (i|we) (mentioned|said|discussed|noted|explained)\b",
+            r"\blike (i|we) said\b",
+            # Past-perfect referential ("we had mentioned", "he had said")
+            # — previously missing, confirmed bug in clip_000
+            r"\b(we|i|he|she|they)\s+had\s+(mentioned|said|discussed|noted|talked|covered)\b",
+            # Passive past-perfect ("as was mentioned", "as had been discussed")
+            r"\bas (was |had been )?(mentioned|said|discussed|noted|explained)\b",
+            # Continuation markers at start of clip
             r"\band so as\b",
             r"\bcontinuing (from|with)\b",
-            r"\bas (was )?mentioned\b",
             r"\bgoing back to\b",
+            # Callback to prior story or event
             r"\bthe story (we|i) (mentioned|told|discussed)\b",
             r"\bremember (when|what|how)\b",
-            r"\blike (i|we) said\b",
+            # Continuation conjunction openers (mid-sentence guaranteed)
+            # Catches: "and so", "but he cannot", "or the other", etc.
+            r"^(and|but|or|so|yet|nor|however|therefore|thus|hence|immensely)\b",
+            # Mid-comparison openers: "like all the prophets", "like every scholar"
+            # — presuppose a subject already established
+            r"^like (all|every|most|the|these|those|other) (the )?\b",
         ]
         for pattern in referential_patterns:
             if re.search(pattern, opening):
