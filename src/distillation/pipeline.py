@@ -234,7 +234,13 @@ class Pipeline:
             if export_video:
                 progress.update(task, description="Cutting clips...")
                 for clip in selected:
-                    self.exporter.export(clip, source_video=str(video_path))
+                    try:
+                        self.exporter.export(clip, source_video=str(video_path))
+                    except Exception as exc:
+                        logger.error(
+                            "Export failed for clip %d: %s — skipping clip, others will proceed.",
+                            clip.clip_id, exc,
+                        )
 
         return PipelineResult(
             source_path=source,

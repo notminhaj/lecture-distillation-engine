@@ -164,6 +164,7 @@ class LLMScorer(BaseScorer):
             model=self.cfg.openai_model,
             max_tokens=2048,
             temperature=0.2,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -340,6 +341,20 @@ Return a JSON array with one scoring object per segment."""
         axes_list: list[EngagementAxes] = []
         for item in data:
             try:
+                # Detect and warn when scored fields fall back to the default 0.5
+                # (key absent from LLM response — indicates prompt/JSON mode issue)
+                _SCORED_FIELDS = (
+                    "semantic_density", "emotional_resonance", "standalone_coherence",
+                    "narrative_completeness", "domain_integrity", "hook_strength",
+                )
+                missing_fields = [f for f in _SCORED_FIELDS if f not in item]
+                if missing_fields:
+                    segment_id = item.get("segment_id", "unknown")
+                    logger.warning(
+                        "LLM response for segment %s is missing fields %s — "
+                        "using fallback 0.5 for each. Check prompt and response_format.",
+                        segment_id, missing_fields,
+                    )
                 axes = EngagementAxes(
                     semantic_density=float(item.get("semantic_density", 0.5)),
                     emotional_resonance=float(item.get("emotional_resonance", 0.5)),

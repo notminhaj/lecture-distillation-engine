@@ -9,6 +9,37 @@ from distillation.models import Domain, EngagementAxes, Segment, ScoredSegment
 from distillation.selection.selector import ClipSelector, DOMAIN_WEIGHTS
 
 
+def make_scored_segment_with_text(
+    segment_id: int,
+    start: float,
+    end: float,
+    text: str,
+    score_override: float = 0.7,
+    *,
+    narrative_completeness: float | None = None,
+    standalone_coherence: float | None = None,
+) -> ScoredSegment:
+    """Variant of make_scored_segment that sets custom text on the segment."""
+    nc = narrative_completeness if narrative_completeness is not None else score_override
+    sc = standalone_coherence if standalone_coherence is not None else score_override
+    axes = EngagementAxes(
+        semantic_density=score_override,
+        emotional_resonance=score_override,
+        standalone_coherence=sc,
+        narrative_completeness=nc,
+        domain_integrity=score_override,
+        hook_strength=score_override,
+    )
+    seg = Segment(
+        segment_id=segment_id,
+        start=start,
+        end=end,
+        text=text,
+        transcript_segment_ids=[segment_id],
+    )
+    return ScoredSegment(segment=seg, scores=axes)
+
+
 def make_scored_segment(
     segment_id: int,
     start: float,
@@ -149,3 +180,107 @@ class TestClipSelector:
         assert abs(total - 1.0) < 1e-9, (
             f"KHUTBA weights sum to {total:.4f}, expected 1.0"
         )
+
+
+class TestReferentialOpenerPenalty:
+    """
+    Regression tests for the ns-002 additions to _referential_opener_penalty().
+
+    Each test verifies that a specific pattern returns (0.5, 0.5) — capping
+    standalone_coherence and narrative_completeness at 0.5 — rather than the
+    no-cap default of (1.0, 1.0).
+    """
+
+    def test_past_perfect_we_had_mentioned_triggers_penalty(self):
+        """'we had mentioned' is a past-perfect referential opener → sc/nc capped at 0.5."""
+        text = "we had mentioned that the reason why Abyssinia was chosen is because of faith."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5, got {sc_cap} for past-perfect opener"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5, got {nc_cap} for past-perfect opener"
+
+    def test_past_perfect_he_had_said_triggers_penalty(self):
+        """'he had said' pattern should also fire the past-perfect referential rule."""
+        text = "he had said that this was the teaching of the Prophet, so we continue from there."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5, got {sc_cap} for 'he had said'"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5, got {nc_cap} for 'he had said'"
+
+    def test_continuation_conjunction_and_triggers_penalty(self):
+        """Segment opening with 'and' (lowercase) → capped at 0.5 (continuation-conjunction)."""
+        text = "and so this is what ibn Taymiya argued about the verse of surah al-Hajj."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for conjunction opener 'and', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for conjunction opener 'and', got {nc_cap}"
+
+    def test_continuation_conjunction_however_triggers_penalty(self):
+        """'however' at the start of a segment is a continuation-conjunction opener."""
+        text = "however the scholars disagreed on the interpretation of this particular verse."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'however' opener, got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'however' opener, got {nc_cap}"
+
+    def test_mid_comparison_like_all_triggers_penalty(self):
+        """'like all the prophets' is a mid-comparison opener → sc/nc capped at 0.5."""
+        text = "like all the prophets but he cannot persist in them and will repent immediately."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'like all' opener, got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'like all' opener, got {nc_cap}"
+
+    def test_clean_opener_no_penalty(self):
+        """A segment with a clean opener should return (1.0, 1.0) — no cap."""
+        text = "The Prophet peace be upon him said: seek knowledge even unto China."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 1.0, f"Expected sc_cap=1.0 for clean opener, got {sc_cap}"
+        assert nc_cap == 1.0, f"Expected nc_cap=1.0 for clean opener, got {nc_cap}"
+
+
+class TestStructuralCompletenessPenalty:
+    """
+    Regression tests for the ns-002 additions to _structural_completeness_penalty().
+
+    Covers: _CONTINUATION_STARTERS frozenset producing -0.25 penalty (stronger than
+    the generic -0.15 for other lowercase starters).
+    """
+
+    def _make_ss(self, text: str) -> ScoredSegment:
+        """Minimal ScoredSegment wrapper with just the text needed for the penalty."""
+        axes = EngagementAxes(
+            semantic_density=0.5, emotional_resonance=0.5, standalone_coherence=0.5,
+            narrative_completeness=0.5, domain_integrity=0.5, hook_strength=0.5,
+        )
+        seg = Segment(segment_id=0, start=0.0, end=45.0, text=text, transcript_segment_ids=[0])
+        return ScoredSegment(segment=seg, scores=axes)
+
+    def test_continuation_starter_and_receives_strong_penalty(self):
+        """'and' at start → _CONTINUATION_STARTERS match → penalty = -0.25 (not -0.15).
+
+        Combined with missing terminal punctuation (-0.15), total would be -0.40,
+        but the clamp at 0.7 applies → final multiplier is 0.7.
+        """
+        # No terminal punctuation → two penalties fire: -0.25 (continuation) + -0.15 (no punct)
+        ss = self._make_ss("and so as you know this was the lesson from the hadith")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        # 1.0 - 0.25 - 0.15 = 0.60, but clamped to max(0.7, 0.60) = 0.7
+        assert mult == 0.7, f"Expected multiplier 0.7 (clamped), got {mult}"
+
+    def test_continuation_starter_immensely_receives_strong_penalty(self):
+        """'immensely' (in _CONTINUATION_STARTERS) → -0.25 penalty, not -0.15."""
+        # Ends with period → only one penalty fires (-0.25 for continuation starter)
+        ss = self._make_ss("immensely and that is sheikh al-Islam ibn Taymiya.")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        # 1.0 - 0.25 (continuation) = 0.75; no terminal punct penalty since ends with '.'
+        assert mult == 0.75, f"Expected multiplier 0.75 for continuation starter, got {mult}"
+
+    def test_regular_lowercase_start_receives_lighter_penalty(self):
+        """A lowercase non-continuation-starter word → -0.15 penalty (not -0.25)."""
+        # 'the' is not in _CONTINUATION_STARTERS → generic -0.15 penalty
+        ss = self._make_ss("the Prophet said seek knowledge even unto China.")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        # 1.0 - 0.15 (lowercase non-continuation start) = 0.85; ends with '.' → no punct penalty
+        assert mult == 0.85, f"Expected multiplier 0.85 for lowercase non-continuation start, got {mult}"
+
+    def test_uppercase_clean_segment_no_penalty(self):
+        """Uppercase start + terminal punctuation → multiplier 1.0 (no penalty)."""
+        ss = self._make_ss("The Prophet peace be upon him said: seek knowledge even unto China.")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        assert mult == 1.0, f"Expected multiplier 1.0 for clean segment, got {mult}"

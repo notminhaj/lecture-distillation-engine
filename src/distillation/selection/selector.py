@@ -87,17 +87,27 @@ class ClipSelector:
         # ── 1. Filter by duration constraints and completeness gate ──────────
         weights = DOMAIN_WEIGHTS.get(domain, DOMAIN_WEIGHTS[Domain.GENERIC])
         min_nc = self.cfg.min_narrative_completeness
-        candidates = [
-            ss for ss in scored
-            if self.cfg.min_clip_duration <= ss.segment.duration <= self.cfg.max_clip_duration
-            and ss.scores.narrative_completeness >= min_nc
-        ]
+        candidates = []
+        duration_ok = []
+        for ss in scored:
+            in_duration = (
+                self.cfg.min_clip_duration <= ss.segment.duration <= self.cfg.max_clip_duration
+            )
+            if not in_duration:
+                logger.debug(
+                    "Duration gate excluded segment %d (%.1fs, %.0f–%.0fs window): %r",
+                    ss.segment.segment_id,
+                    ss.segment.duration,
+                    self.cfg.min_clip_duration,
+                    self.cfg.max_clip_duration,
+                    ss.segment.text[:60],
+                )
+                continue
+            duration_ok.append(ss)
+            if ss.scores.narrative_completeness >= min_nc:
+                candidates.append(ss)
 
         # Log how many were filtered by completeness gate
-        duration_ok = [
-            ss for ss in scored
-            if self.cfg.min_clip_duration <= ss.segment.duration <= self.cfg.max_clip_duration
-        ]
         completeness_filtered = len(duration_ok) - len(candidates)
         if completeness_filtered > 0:
             logger.info(
