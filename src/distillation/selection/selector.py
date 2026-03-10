@@ -256,17 +256,21 @@ class ClipSelector:
             r"\bas you( all)? know\b",
             r"\bwe all know\b",
             # Simple present referential ("as i mentioned", "as we said")
-            r"\bas (i|we) (mentioned|said|discussed|noted|explained)\b",
+            r"\bas (i|we) (mentioned|said|discussed|noted|explained|stated|described)\b",
             r"\blike (i|we) said\b",
             # Past-perfect referential ("we had mentioned", "he had said")
             # — previously missing, confirmed bug in clip_000
             r"\b(we|i|he|she|they)\s+had\s+(mentioned|said|discussed|noted|talked|covered)\b",
-            # Passive past-perfect ("as was mentioned", "as had been discussed")
-            r"\bas (was |had been )?(mentioned|said|discussed|noted|explained)\b",
+            # Passive past-perfect ("as was mentioned", "as had been discussed", "as stated")
+            r"\bas (was |had been )?(mentioned|said|discussed|noted|explained|stated|described)\b",
+            # Subject-less opener referentials ("I mentioned", "I said", "we noted")
+            # — opener begins directly with first-person referential without "as"
+            r"^(i|we) (mentioned|said|stated|discussed|noted|explained|described)\b",
             # Continuation markers at start of clip
             r"\band so as\b",
             r"\bcontinuing (from|with)\b",
             r"\bgoing back to\b",
+            r"\bbuilding on (that|this|what)\b",
             # Callback to prior story or event
             r"\bthe story (we|i) (mentioned|told|discussed)\b",
             r"\bremember (when|what|how)\b",

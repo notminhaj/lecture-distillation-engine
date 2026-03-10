@@ -233,6 +233,50 @@ class TestReferentialOpenerPenalty:
         assert sc_cap == 1.0, f"Expected sc_cap=1.0 for clean opener, got {sc_cap}"
         assert nc_cap == 1.0, f"Expected nc_cap=1.0 for clean opener, got {nc_cap}"
 
+    # ── ns-011 additions: new referential opener patterns ────────────────────
+
+    def test_as_i_stated_triggers_penalty(self):
+        """'as I stated' (new: 'stated' added to subject pattern) → sc/nc capped at 0.5."""
+        text = "as I stated earlier, the Prophet had a unique approach to this matter."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'as I stated', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'as I stated', got {nc_cap}"
+
+    def test_as_stated_passive_triggers_penalty(self):
+        """'as stated' (passive, no subject) → sc/nc capped at 0.5."""
+        text = "as stated in the previous section, this ruling applies to all Muslims."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'as stated', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'as stated', got {nc_cap}"
+
+    def test_as_described_passive_triggers_penalty(self):
+        """'as described' (passive, no subject) → sc/nc capped at 0.5."""
+        text = "as described above, the scholars had three different positions on this."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'as described', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'as described', got {nc_cap}"
+
+    def test_subject_less_i_mentioned_opener_triggers_penalty(self):
+        """'I mentioned' at the start (without 'as') → sc/nc capped at 0.5."""
+        text = "I mentioned this hadith last week, so let me now explain the ruling that follows."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'I mentioned' opener, got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'I mentioned' opener, got {nc_cap}"
+
+    def test_subject_less_we_said_opener_triggers_penalty(self):
+        """'we said' at the start (without 'as') → sc/nc capped at 0.5."""
+        text = "we said that the first school of thought holds that this verse is general."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'we said' opener, got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'we said' opener, got {nc_cap}"
+
+    def test_building_on_that_triggers_penalty(self):
+        """'building on that' is a continuation marker → sc/nc capped at 0.5."""
+        text = "building on that point, we can now understand why ibn Taymiya disagreed."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'building on that', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'building on that', got {nc_cap}"
+
 
 class TestStructuralCompletenessPenalty:
     """
