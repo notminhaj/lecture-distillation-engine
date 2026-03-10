@@ -1,0 +1,33 @@
+{
+  "source_path": "fixtures/sample_audio.mp3",
+  "duration": 300.0,
+  "language": "en",
+  "full_text": "",
+  "segments": [
+    {"id": 0, "text": "Bismillah ar-Rahman ar-Raheem.", "start": 0.0, "end": 3.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 1, "text": "We begin today with a reminder about gratitude.", "start": 3.5, "end": 8.2, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 2, "text": "The Prophet, peace be upon him, said:", "start": 8.2, "end": 11.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 3, "text": "'He who does not thank people has not thanked Allah.'", "start": 11.0, "end": 16.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 4, "text": "And this hadith teaches us something profound.", "start": 16.5, "end": 20.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 5, "text": "Gratitude is not merely an emotion — it is an action.", "start": 20.0, "end": 25.3, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 6, "text": "So many of us feel grateful inside, but we never express it.", "start": 25.3, "end": 30.8, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 7, "text": "When was the last time you thanked your parents face to face?", "start": 30.8, "end": 36.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 8, "text": "Not a text message. Not an emoji.", "start": 36.0, "end": 39.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 9, "text": "A real, sincere expression of thankfulness.", "start": 39.5, "end": 43.2, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 10, "text": "Allah says in Surah Ibrahim, verse seven:", "start": 43.2, "end": 47.8, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 11, "text": "'If you are grateful, I will surely increase you.'", "start": 47.8, "end": 52.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 12, "text": "But what are we increasing?", "start": 52.5, "end": 55.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 13, "text": "Not just wealth. Not just health.", "start": 55.0, "end": 58.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 14, "text": "Increase in awareness, in light, in proximity to Allah.", "start": 58.5, "end": 64.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 15, "text": "The grateful heart sees blessings where others see burdens.", "start": 64.0, "end": 69.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 16, "text": "Consider the believer who loses their job.", "start": 69.5, "end": 73.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 17, "text": "The ungrateful person sees only loss.", "start": 73.0, "end": 76.8, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 18, "text": "But the grateful believer says: Alhamdulillah — perhaps this is a door opening.", "start": 76.8, "end": 83.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 19, "text": "Three practical steps before we close.", "start": 83.0, "end": 86.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 20, "text": "First: say Alhamdulillah thirty-three times after Fajr.", "start": 86.5, "end": 92.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 21, "text": "Second: name one blessing you almost forgot you had.", "start": 92.0, "end": 97.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 22, "text": "Third: thank a person in your life this week — in person.", "start": 97.5, "end": 103.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 23, "text": "May Allah make us among the grateful.", "start": 103.0, "end": 107.0, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01},
+    {"id": 24, "text": "Ameen. Jazakum Allahu Khayran.", "start": 107.0, "end": 110.5, "words": [], "avg_logprob": -0.1, "no_speech_prob": 0.01}
+  ]
+}
