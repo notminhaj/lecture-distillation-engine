@@ -165,6 +165,7 @@ class MomentDetector:
             model=self.cfg.openai_model,
             max_tokens=4096,
             temperature=0.3,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"TRANSCRIPT:\n{chunk_text}"},
@@ -197,12 +198,24 @@ SELECTION CRITERIA (in priority order):
 - Narratively complete: opens and closes a thought within 15–45 seconds
 - Duration: aim for 15–45 seconds per moment
 
-RULES:
+SENTENCE BOUNDARY RULES (MANDATORY — these are hard rules, not preferences):
+- Moments MUST begin at a natural sentence boundary where the speaker starts a
+  new thought. The opening_line MUST start with a capitalized word.
+- REJECT any moment whose opening_line begins with a lowercase word.
+- REJECT any moment whose opening_line begins with a continuation word:
+  "and", "but", "so", "or", "yet", "like", "for", "that", "however",
+  "therefore", "then", "now", "also", "still", "even", "well", "you know".
+- REJECT any moment that opens mid-sentence, mid-argument, or mid-comparison.
+- If no moment in a section satisfies these rules, skip that section entirely.
+
+OUTPUT FORMAT:
 - Return ONLY valid JSON — no markdown, no prose outside the JSON.
-- Return a JSON array of objects, each with: approximate_start, approximate_end,
+- Return a JSON object with a single key "moments" whose value is an array.
+- Each array element must have: approximate_start, approximate_end,
   opening_line, rationale.
+- Example: {{"moments": [{{"approximate_start": 10.5, "approximate_end": 45.2,
+  "opening_line": "The Prophet said...", "rationale": "..."}}]}}
 - Moments MUST NOT overlap.
-- Prefer moments that start at natural sentence boundaries.
 """
 
     @staticmethod
@@ -219,8 +232,11 @@ RULES:
             logger.error("Failed to parse nomination response: %s\nRaw: %s", e, raw[:500])
             return []
 
-        if not isinstance(data, list):
-            data = [data]
+        # Unwrap {"moments": [...]} wrapper (used when response_format=json_object)
+        if isinstance(data, dict):
+            data = data.get("moments", [])
+            if not isinstance(data, list):
+                data = [data]
 
         nominations: list[NominatedMoment] = []
         for item in data:
