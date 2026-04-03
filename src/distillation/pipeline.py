@@ -242,6 +242,36 @@ class Pipeline:
                             clip.clip_id, exc,
                         )
 
+        # ── Diagnostic report ─────────────────────────────────────────────
+        try:
+            from distillation.diagnostics import DiagnosticReporter
+            nominations = getattr(self.moment_detector, "last_nominations", [])
+            raw_responses = getattr(self.scorer, "last_raw_responses", [])
+            config_snapshot = {
+                "min_clip_duration": self.cfg.min_clip_duration,
+                "max_clip_duration": self.cfg.max_clip_duration,
+                "target_clip_count": self.cfg.target_clip_count,
+                "min_narrative_completeness": self.cfg.min_narrative_completeness,
+                "nomination_strategy": self.cfg.nomination_strategy,
+                "openai_model": self.cfg.openai_model,
+            }
+            report = DiagnosticReporter.build_report(
+                domain=domain,
+                nominations=nominations,
+                segments=segments,
+                scored_segments=scored,
+                raw_scorer_responses=raw_responses,
+                selected_clips=selected,
+                config_snapshot=config_snapshot,
+            )
+            DiagnosticReporter.write_report(report, self.cfg.output_dir)
+            logger.info(
+                "Diagnostic report written: %s",
+                self.cfg.output_dir / "diagnostics_report.json",
+            )
+        except Exception as exc:
+            logger.warning("Failed to write diagnostic report: %s", exc)
+
         return PipelineResult(
             source_path=source,
             domain=domain,

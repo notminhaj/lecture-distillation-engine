@@ -328,3 +328,61 @@ class TestStructuralCompletenessPenalty:
         ss = self._make_ss("The Prophet peace be upon him said: seek knowledge even unto China.")
         mult = ClipSelector._structural_completeness_penalty(ss)
         assert mult == 1.0, f"Expected multiplier 1.0 for clean segment, got {mult}"
+
+    # ── ns-012 additions: expanded continuation starters ───────────────────
+
+    def test_continuation_starter_that_receives_strong_penalty(self):
+        """'that' is now a continuation starter → -0.25 penalty."""
+        ss = self._make_ss("that Jibril is coming this is exactly the claims.")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        assert mult == 0.75, f"Expected 0.75 for 'that' continuation, got {mult}"
+
+    def test_continuation_starter_when_receives_strong_penalty(self):
+        """'when' is now a continuation starter → -0.25 penalty."""
+        ss = self._make_ss("when Amr wants to kill the envoy and this love.")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        assert mult == 0.75, f"Expected 0.75 for 'when' continuation, got {mult}"
+
+    def test_continuation_starter_as_receives_strong_penalty(self):
+        """'as' is now a continuation starter → -0.25 penalty."""
+        ss = self._make_ss("as well that that is O Messenger of Allah.")
+        mult = ClipSelector._structural_completeness_penalty(ss)
+        assert mult == 0.75, f"Expected 0.75 for 'as' continuation, got {mult}"
+
+
+class TestReferentialOpenerPatterns:
+    """Tests for ns-012 referential opener pattern additions."""
+
+    def test_as_well_triggers_referential_penalty(self):
+        """'as well that that...' → referential opener detected → capped at 0.5."""
+        text = "as well that that is O Messenger of Allah can my sins be forgiven"
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'as well', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'as well', got {nc_cap}"
+
+    def test_that_is_why_triggers_referential_penalty(self):
+        """'that is why...' → referential opener detected → capped at 0.5."""
+        text = "that is why we must reflect on this lesson carefully"
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'that is why', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'that is why', got {nc_cap}"
+
+    def test_when_he_triggers_referential_penalty(self):
+        """'when he arrived...' → referential opener detected → capped at 0.5."""
+        text = "when he arrived in Madinah the Prophet was already there"
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'when he', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'when he', got {nc_cap}"
+
+    def test_which_means_triggers_referential_penalty(self):
+        """'which means...' → referential opener detected → capped at 0.5."""
+        text = "which means the ruling only applies in specific circumstances"
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 0.5, f"Expected sc_cap=0.5 for 'which means', got {sc_cap}"
+        assert nc_cap == 0.5, f"Expected nc_cap=0.5 for 'which means', got {nc_cap}"
+
+    def test_clean_when_question_not_penalised(self):
+        """'When did the Prophet...' (uppercase, question form) should not be penalised."""
+        text = "When did the Prophet first receive revelation? This is a critical question."
+        sc_cap, nc_cap = ClipSelector._referential_opener_penalty(text)
+        assert sc_cap == 1.0, f"Expected sc_cap=1.0 for uppercase 'When' question, got {sc_cap}"

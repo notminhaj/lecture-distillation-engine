@@ -95,6 +95,8 @@ class LLMScorer(BaseScorer):
         self.cfg = config
         self.client = OpenAI(api_key=config.openai_api_key)
         self.acoustic = AcousticScorer()
+        # Diagnostic: store raw LLM responses from the last score() call
+        self.last_raw_responses: list[str] = []
 
     def score(
         self,
@@ -117,6 +119,7 @@ class LLMScorer(BaseScorer):
 
         # ── LLM scoring in batches with sliding context ─────────────────────
         all_axes: list[EngagementAxes] = []
+        self.last_raw_responses = []
         for batch_start in range(0, len(segments), BATCH_SIZE):
             batch = segments[batch_start: batch_start + BATCH_SIZE]
             batch_axes = self._score_batch(
@@ -162,7 +165,7 @@ class LLMScorer(BaseScorer):
 
         response = self.client.chat.completions.create(
             model=self.cfg.openai_model,
-            max_tokens=2048,
+            max_tokens=4096,
             temperature=0.2,
             response_format={"type": "json_object"},
             messages=[
@@ -172,6 +175,9 @@ class LLMScorer(BaseScorer):
         )
 
         raw_text = response.choices[0].message.content
+        logger.debug("Raw scorer response (first 500 chars): %s", raw_text[:500] if raw_text else "<empty>")
+        # Store for diagnostics
+        self.last_raw_responses.append(raw_text or "")
         return self._parse_response(raw_text, expected_count=len(batch))
 
     def _build_system_prompt(self, domain: Domain) -> str:
@@ -183,7 +189,15 @@ Your job: evaluate candidate clips from a lecture and score each on six axes.
 
 SCORING AXES (all 0.0–1.0, two decimal places):
 - semantic_density: Information per second. High = every sentence adds new value.
+  Rubric:
+    0.8+: Every sentence introduces a new fact, claim, or idea — no repetition, no filler
+    0.5–0.7: Mostly informative but contains some restating, hedging, or padding
+    <0.5: Repetitive, circuitous, or mostly filler ("you know what I mean", long pauses, throat-clearing)
 - emotional_resonance: Does the speaker's language evoke feeling, urgency, or awe?
+  Rubric:
+    0.8+: Uses vivid imagery, rhetorical questions, repetition for emphasis, or direct emotional appeal
+    0.5–0.7: Tone is earnest but language is mostly declarative; emotion is implied rather than evoked
+    <0.5: Flat, informational delivery; no rhetorical devices, no urgency, no emotional language
 - standalone_coherence: Can a cold viewer (no prior context) understand this clip?
   Rubric:
     0.8+: Fully self-contained — no pronouns, references, or arguments that assume prior listening
@@ -195,6 +209,10 @@ SCORING AXES (all 0.0–1.0, two decimal places):
     0.5–0.7: Has a clear opening OR a clear close, but not both; or closes on a soft trailing thought
     <0.5: Starts mid-sentence/mid-argument, or ends abruptly without resolution; thought is severed
 - domain_integrity: Is domain-specific content presented correctly and completely?
+  Rubric:
+    0.8+: All domain-specific claims are complete and correctly presented (attributions, sources, reasoning intact)
+    0.5–0.7: Content is mostly correct but missing a minor attribution, caveat, or supporting detail
+    <0.5: A claim, ruling, or citation is incomplete, unattributed, or potentially misleading without its context
 - hook_strength: Would the FIRST 3 seconds stop a scroll on TikTok?
   Quote the exact opening words of the segment in your rationale and explain WHY they would or wouldn't hook.
   Rubric:
@@ -215,13 +233,25 @@ narratives, or any external context to infer meaning that is absent from the cli
 - A high score on either axis is ONLY valid when the evidence is entirely within the
   transcript text. Rationale must cite the exact words that justify the score.
 
+REASONING PROCESS (MANDATORY — think before scoring):
+For each segment, you MUST write a "reasoning" field BEFORE assigning any scores.
+In your reasoning:
+1. Quote the opening words and assess hook potential.
+2. Identify whether the clip opens and closes a complete thought.
+3. Flag any referential phrases ("as we mentioned", pronouns without antecedents).
+4. Note domain-specific completeness issues (missing attributions, incomplete rulings).
+Only THEN assign scores consistent with your reasoning. If your reasoning identifies
+a problem, the corresponding axis score MUST reflect it — do not reason one way and score another.
+
 RULES:
 - Return ONLY valid JSON — no markdown, no prose, no explanation outside the JSON.
 - Return a JSON array with exactly one object per input segment, in the same order.
-- Each object: {{"segment_id": int, "semantic_density": float, "emotional_resonance": float,
+- Each object MUST have fields in this order: {{"segment_id": int,
+  "reasoning": "string (3-5 sentences: quote opening words, assess coherence, flag issues)",
+  "semantic_density": float, "emotional_resonance": float,
   "standalone_coherence": float, "narrative_completeness": float,
-  "domain_integrity": float, "hook_strength": float, "llm_rationale": "string"}}
-- llm_rationale: 1–2 sentences explaining the key strength and weakness.
+  "domain_integrity": float, "hook_strength": float,
+  "llm_rationale": "string (1 sentence: the single most important takeaway)"}}
 """
 
     def _build_user_prompt(
@@ -335,8 +365,15 @@ Return a JSON array with one scoring object per segment."""
                 llm_rationale="Scoring failed; using neutral defaults.",
             ) for _ in range(expected_count)]
 
-        if not isinstance(data, list):
-            data = [data]
+        # Unwrap common wrappers: {"scores": [...]}, {"segments": [...]}, etc.
+        if isinstance(data, dict):
+            for key in ("scores", "segments", "results", "data"):
+                if key in data and isinstance(data[key], list):
+                    data = data[key]
+                    break
+            else:
+                # Single object, not a wrapper — treat as one-element list
+                data = [data]
 
         axes_list: list[EngagementAxes] = []
         for item in data:
@@ -355,6 +392,10 @@ Return a JSON array with one scoring object per segment."""
                         "using fallback 0.5 for each. Check prompt and response_format.",
                         segment_id, missing_fields,
                     )
+                # Combine reasoning (CoT) and llm_rationale into the stored rationale
+                reasoning = str(item.get("reasoning", ""))
+                rationale = str(item.get("llm_rationale", ""))
+                combined_rationale = f"{reasoning} || {rationale}" if reasoning and rationale else reasoning or rationale
                 axes = EngagementAxes(
                     semantic_density=float(item.get("semantic_density", 0.5)),
                     emotional_resonance=float(item.get("emotional_resonance", 0.5)),
@@ -362,7 +403,7 @@ Return a JSON array with one scoring object per segment."""
                     narrative_completeness=float(item.get("narrative_completeness", 0.5)),
                     domain_integrity=float(item.get("domain_integrity", 0.5)),
                     hook_strength=float(item.get("hook_strength", 0.5)),
-                    llm_rationale=str(item.get("llm_rationale", "")),
+                    llm_rationale=combined_rationale,
                 )
                 axes_list.append(axes)
             except Exception as e:

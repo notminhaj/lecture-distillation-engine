@@ -55,9 +55,10 @@ class MetadataGenerator:
         seed_tags = DOMAIN_HASHTAG_SEEDS.get(domain, [])
         clip_text = clip.scored_segment.segment.text
 
-        prompt = f"""You are a short-form video strategist.
+        system_prompt = """You are a short-form video strategist specialising in TikTok, YouTube Shorts, and Instagram Reels.
+Your job: generate platform-ready metadata that maximises click-through and engagement."""
 
-CLIP TEXT ({clip.duration:.0f} seconds):
+        user_prompt = f"""CLIP TEXT ({clip.duration:.0f} seconds):
 {clip_text}
 
 DOMAIN: {domain.value}
@@ -79,8 +80,14 @@ Generate platform metadata for this clip. Return ONLY valid JSON:
 }}
 
 Rules:
-- hook_caption must NOT start with "In this clip" or "Watch as" — start with the idea.
-- thumbnail_suggestion should be a specific visual, not generic.
+- hook_caption must NOT start with "In this clip", "Watch as", or "Did you know" — lead with the core idea itself.
+  GOOD: "The one deed that outweighs a lifetime of worship"
+  GOOD: "Your anger is destroying your relationships — here's proof"
+  BAD: "In this clip, the speaker talks about anger"
+  BAD: "Watch as the sheikh explains a powerful hadith"
+- thumbnail_suggestion must describe a specific, producible visual — not a vague concept.
+  GOOD: "Close-up of speaker mid-gesture with bold white text overlay: 'THE FORGOTTEN SUNNAH'"
+  BAD: "An inspiring image related to the topic"
 - Provide 2-4 b_roll_suggestions tied to specific moments in the transcript.
 - hashtags: mix popular + niche, no spaces in tags."""
 
@@ -88,7 +95,11 @@ Rules:
             model=self.cfg.openai_model,
             max_tokens=1024,
             temperature=0.4,
-            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
         )
 
         return response.choices[0].message.content

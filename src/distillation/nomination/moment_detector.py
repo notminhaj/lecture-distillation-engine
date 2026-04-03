@@ -72,6 +72,8 @@ class MomentDetector:
     def __init__(self, config: Config) -> None:
         self.cfg = config
         self.client = OpenAI(api_key=config.openai_api_key)
+        # Diagnostic: store all nominations from the last detect() call
+        self.last_nominations: list[NominatedMoment] = []
 
     def detect(
         self,
@@ -109,6 +111,9 @@ class MomentDetector:
         # Snap to word-level timestamps and build Segments
         segments = self._snap_to_segments(all_nominations, transcript)
         logger.info("Snapped to %d valid segments", len(segments))
+
+        # Store for diagnostics
+        self.last_nominations = all_nominations
 
         return segments
 
@@ -185,12 +190,6 @@ short-form clips (TikTok, YouTube Shorts, Instagram Reels).
 
 {domain_ctx}
 
-For each moment, identify:
-1. approximate_start: start timestamp in seconds (from the [Xs] markers)
-2. approximate_end: end timestamp in seconds
-3. opening_line: quote the EXACT first words of the moment
-4. rationale: explain WHY this moment is compelling (hook, emotion, completeness)
-
 SELECTION CRITERIA (in priority order):
 - Self-contained: viewer needs NO prior context from the lecture
 - Hook-strong: the first 3 seconds grab attention (question, claim, emotion)
@@ -208,13 +207,31 @@ SENTENCE BOUNDARY RULES (MANDATORY — these are hard rules, not preferences):
 - REJECT any moment that opens mid-sentence, mid-argument, or mid-comparison.
 - If no moment in a section satisfies these rules, skip that section entirely.
 
+REASONING PROCESS (MANDATORY — think before selecting):
+For each candidate moment, FIRST write a "rationale" explaining:
+1. WHY this moment is compelling (hook, emotion, completeness)
+2. Whether it opens AND closes a complete thought
+3. Whether a cold viewer (no prior context) would understand it
+Only THEN assign timestamps. If your rationale reveals a problem, do NOT include the moment.
+
+EXAMPLES:
+GOOD moment:
+  {{"rationale": "Opens with a direct rhetorical question that hooks immediately. The speaker poses the question, delivers a hadith with full attribution, and concludes with the lesson — complete narrative arc in ~30 seconds. No prior context needed.",
+  "approximate_start": 120.5, "approximate_end": 152.0,
+  "opening_line": "What is the one deed that the Prophet valued above all others?"}}
+
+BAD moment (do NOT nominate moments like this):
+  {{"rationale": "Emotionally strong but opens mid-argument with 'And that is why' — presupposes the preceding reasoning. Viewer would be confused.",
+  "approximate_start": 45.0, "approximate_end": 72.0,
+  "opening_line": "And that is why we must reflect on this"}}
+
 OUTPUT FORMAT:
 - Return ONLY valid JSON — no markdown, no prose outside the JSON.
 - Return a JSON object with a single key "moments" whose value is an array.
-- Each array element must have: approximate_start, approximate_end,
-  opening_line, rationale.
-- Example: {{"moments": [{{"approximate_start": 10.5, "approximate_end": 45.2,
-  "opening_line": "The Prophet said...", "rationale": "..."}}]}}
+- Each array element must have fields in this order: rationale, approximate_start,
+  approximate_end, opening_line.
+- Example: {{"moments": [{{"rationale": "...", "approximate_start": 10.5,
+  "approximate_end": 45.2, "opening_line": "The Prophet said..."}}]}}
 - Moments MUST NOT overlap.
 """
 

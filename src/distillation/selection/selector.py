@@ -200,6 +200,9 @@ class ClipSelector:
         "immensely", "completely", "actually", "basically", "essentially",
         "furthermore", "moreover", "additionally", "consequently",
         "like",  # "like all the prophets" = mid-comparison
+        "that", "when", "where", "which", "while", "although", "though",
+        "then", "also", "even", "still", "just", "now",
+        "as",   # "as well that that..." = mid-sentence continuation
     })
 
     @classmethod
@@ -277,6 +280,12 @@ class ClipSelector:
             # Continuation conjunction openers (mid-sentence guaranteed)
             # Catches: "and so", "but he cannot", "or the other", etc.
             r"^(and|but|or|so|yet|nor|however|therefore|thus|hence|immensely)\b",
+            # Mid-sentence continuation phrases
+            # "as well that...", "as well as...", "that is why...", "when he..."
+            r"^as well\b",
+            r"^that (is|was|he|she|they|we|it)\b",
+            r"^when (he|she|they|the|a|this|it)\b",
+            r"^which (is|was|he|she|they|means)\b",
             # Mid-comparison openers: "like all the prophets", "like every scholar"
             # — presuppose a subject already established
             r"^like (all|every|most|the|these|those|other) (the )?\b",

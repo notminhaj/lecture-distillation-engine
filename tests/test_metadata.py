@@ -146,5 +146,6 @@ class TestMetadataGeneratorIntegration:
 
         call_args = generator.client.chat.completions.create.call_args
         messages = call_args.kwargs.get("messages") or call_args[1].get("messages")
-        prompt_text = messages[0]["content"]
-        assert "seek knowledge" in prompt_text
+        # Clip text is in the user message (last message after system/user split)
+        user_message = messages[-1]["content"]
+        assert "seek knowledge" in user_message
